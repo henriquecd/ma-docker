@@ -1,2 +1,2 @@
 master.name=redis-cs-cluster
-sentinels=redis:16379
+sentinels=ma_redis:16379

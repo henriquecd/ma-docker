@@ -1,41 +1,21 @@
-version: "3"
+version: "2.1"
 services:
   zookeeper:
     image: "zookeeper:3.4"
-    container_name: zookeeper
-    ports:
-      - "2181:2181"
 
   kafka:
-    image: "wurstmeister/kafka:0.10.1.1"
-    container_name: kafka
-    ports:
-      - "9092:9092"
-      - "32773:32773"
+    image: "ches/kafka:0.10.1.1"
     depends_on:
       - zookeeper
     environment:
-      KAFKA_ADVERTISED_HOST_NAME: kafka
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./conf/kafka_init.sh:/root/kafka_init.sh
-    command: "/root/kafka_init.sh"
+      ZOOKEEPER_IP: zookeeper
+      KAFKA_NUM_PARTITIONS: 10
 
   cassandra:
     image: "cassandra:3.10"
-    container_name: cassandra
-    volumes:
-      - ./conf/cassandra_init.sh:/var/lib/cassandra/cassandra_init.sh
-      - ./conf/cassandra.conf:/var/lib/cassandra/cassandra.conf
-    command: "/var/lib/cassandra/cassandra_init.sh cassandra -f"
 
-  redis:
+  ma_redis:
     image: "redis:3.2.8"
-    container_name: redis
-    ports:
-      - "6379"
-      - "16379"
     volumes:
       - ./conf/redis.conf:/usr/local/etc/redis/redis.conf
       - ./conf/sentinel.conf:/usr/local/etc/redis/sentinel.conf
@@ -43,48 +23,54 @@ services:
     command: sh -c "chmod +x /usr/local/etc/redis/redis_init.sh && /usr/local/etc/redis/redis_init.sh"
 
   kerberos:
-    image: "kerberos_image"
-    container_name: kerberos
+    image: "kerberos_image_test"
     environment:
       - CASSANDRA_HOSTNAME=cassandra
       - CASSANDRA_PORT=9042
-    ports:
-      - "8080:8080"
     volumes:
-      - ./conf/wait_for_it.sh:/home/kerberos/wait_for_it.sh
       - ./conf/node.config:/opt/jboss/wildfly/standalone/configuration/node.config
       - ./conf/kafka.brokers:/opt/jboss/wildfly/standalone/configuration/kafka.brokers
       - ./conf/redis.sentinels:/opt/jboss/wildfly/standalone/configuration/redis.sentinels
     depends_on:
       - kafka
-      - redis
+      - ma_redis
       - cassandra
-    command: sh -c "/home/kerberos/wait_for_it.sh /opt/jboss/wildfly/bin/standalone.sh -b 0.0.0.0"
+    #command: sh -c "/home/kerberos/wait_for_it.sh /opt/jboss/wildfly/bin/standalone.sh -b 0.0.0.0"
 
-  kong-database:
-    image: postgres:9.4
-    container_name: kong-database
-    ports:
-      - "5433:5432"
-    environment:
-      - POSTGRES_USER=kong
-      - POSTGRES_DB=kong
+#  kong-database:
+#    image: postgres:9.4
+#    environment:
+#      - POSTGRES_USER=kong
+#      - POSTGRES_DB=kong
+#    healthcheck:
+#      test: ["CMD", "pg_isready", "-U", "postgres"]
+#      interval: 10s
+#      timeout: 5s
+#      retries: 5
 
-  kong:
-    image: kong-plugin-development
-    container_name: kong
-    restart: always
-    ports:
-      - 8000:8000
-      - 8001:8001
-      - 8443:8443
-      - 7946:7946
-      - 7946:7946/udp
-    environment:
-      - KONG_DATABASE=postgres
-      - KONG_PG_HOST=kong-database
-    volumes:    
-      - ./conf/kong_config:/etc/kong/
-      - /home/henrique/workspace/platiot/mutual-authentication/plugin:/plugins
+#  kong-migration:
+#    image: dojot/kong
+#    depends_on:
+#      kong-database:
+#        condition: service_healthy
+#    environment:
+#      - KONG_DATABASE=postgres
+#      - KONG_PG_HOST=kong-database
+#    command: kong migrations up
 
-     
+#  kong:
+#    image: dojot/kong
+#    depends_on:
+#      kong-database:
+#        condition: service_healthy
+#      kong-migration:
+#        condition: service_started
+#    environment:
+#      - KONG_DATABASE=postgres
+#      - KONG_PG_HOST=kong-database
+#      - KONG_PG_DATABASE=kong
+#    ports:
+#      - 8000:8000
+#      - 8001:8001
+#    volumes:
+#      - /home/henrique/workspace/platiot/mutual-authentication/ma-kong-plugin:/plugins/ma-kong-plugin
