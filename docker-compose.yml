@@ -1,5 +1,53 @@
 version: "2.1"
 services:
+  kong-database:
+    image: postgres:9.4
+    restart: always
+    environment:
+      - POSTGRES_USER=kong
+      - POSTGRES_DB=kong
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 6s
+      retries: 15
+
+  kong-migration:
+    image: dojot/kong
+    depends_on:
+      kong-database:
+        condition: service_healthy
+    environment:
+      - KONG_DATABASE=postgres
+      - KONG_PG_HOST=kong-database
+    command: kong migrations up
+
+  kong:
+    image: dojot/kong
+    restart: always
+    depends_on:
+      kong-database:
+        condition: service_healthy
+      kong-migration:
+        condition: service_started
+    environment:
+      - KONG_DATABASE=postgres
+      - KONG_PG_HOST=kong-database
+      - KONG_PG_DATABASE=kong
+    ports:
+      - 8000:8000
+      - 8001:8001
+    volumes:
+      - /home/henrique/workspace/platiot/mutual-authentication/ma-kong-plugin:/plugins/ma-kong-plugin
+
+  elasticsearch:
+    image: "elasticsearch"
+
+#  kibana:
+#    image: kibana
+#    ports:
+#      - 5601:5601
+
   zookeeper:
     image: "zookeeper:3.4"
 
@@ -8,13 +56,15 @@ services:
     depends_on:
       - zookeeper
     environment:
+      KAFKA_ADVERTISED_HOST_NAME: kafka
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       ZOOKEEPER_IP: zookeeper
       KAFKA_NUM_PARTITIONS: 10
 
   cassandra:
     image: "cassandra:3.10"
 
-  ma_redis:
+  redis:
     image: "redis:3.2.8"
     volumes:
       - ./conf/redis.conf:/usr/local/etc/redis/redis.conf
@@ -27,50 +77,15 @@ services:
     environment:
       - CASSANDRA_HOSTNAME=cassandra
       - CASSANDRA_PORT=9042
+    ports:
+      - 8080:8080
     volumes:
       - ./conf/node.config:/opt/jboss/wildfly/standalone/configuration/node.config
       - ./conf/kafka.brokers:/opt/jboss/wildfly/standalone/configuration/kafka.brokers
       - ./conf/redis.sentinels:/opt/jboss/wildfly/standalone/configuration/redis.sentinels
+      - ./application:/home/kerberos/application
     depends_on:
       - kafka
-      - ma_redis
+      - redis
       - cassandra
-    #command: sh -c "/home/kerberos/wait_for_it.sh /opt/jboss/wildfly/bin/standalone.sh -b 0.0.0.0"
 
-#  kong-database:
-#    image: postgres:9.4
-#    environment:
-#      - POSTGRES_USER=kong
-#      - POSTGRES_DB=kong
-#    healthcheck:
-#      test: ["CMD", "pg_isready", "-U", "postgres"]
-#      interval: 10s
-#      timeout: 5s
-#      retries: 5
-
-#  kong-migration:
-#    image: dojot/kong
-#    depends_on:
-#      kong-database:
-#        condition: service_healthy
-#    environment:
-#      - KONG_DATABASE=postgres
-#      - KONG_PG_HOST=kong-database
-#    command: kong migrations up
-
-#  kong:
-#    image: dojot/kong
-#    depends_on:
-#      kong-database:
-#        condition: service_healthy
-#      kong-migration:
-#        condition: service_started
-#    environment:
-#      - KONG_DATABASE=postgres
-#      - KONG_PG_HOST=kong-database
-#      - KONG_PG_DATABASE=kong
-#    ports:
-#      - 8000:8000
-#      - 8001:8001
-#    volumes:
-#      - /home/henrique/workspace/platiot/mutual-authentication/ma-kong-plugin:/plugins/ma-kong-plugin
